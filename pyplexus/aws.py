@@ -3,7 +3,7 @@ import boto3.session
 
 
 class AWS:
-    def __init__(self, access=None, secret=None, region='us-east-1', resources=[]):
+    def __init__(self, access=None, secret=None, region='us-east-1', resources=[], clients=[]):
         self.region = region
 
         if access is None or secret is None:
@@ -15,6 +15,9 @@ class AWS:
 
         for res in resources:
             setattr(self, res, self.session.resource(res))
+
+        for cli in clients:
+            setattr(self, cli, self.session.client(cli))
 
     def session_key(self):
         return "%s--%s" % (self.sessid, self.region)

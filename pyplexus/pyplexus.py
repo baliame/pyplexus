@@ -1,15 +1,18 @@
 from .aws import AWS
 from .context import Context
+from .customer_auth import customer_auth_sign, generate_policies
 import click
 import json
 import os
 from httphmac.request import Request
 from httphmac.v2 import V2Signer as Signer
+import requests
 import hashlib
 import ntpath
 import uuid
 import base64
 import sys
+import time
 
 context = Context()
 
@@ -35,7 +38,42 @@ def cli(**kwargs):
         pass
     context.merge(kwargs, exclude=["verbose"])
     context.verbose = kwargs["verbose"]
-    context.aws = AWS(context.config("aws-access-key", None), context.config("aws-secret-key", None), context.config("aws-region", "us-east-1"), ['s3'])
+    context.aws = AWS(context.config("aws-access-key", None), context.config("aws-secret-key", None), context.config("aws-region", "us-east-1"), resources=['s3'], clients=['cloudformation'])
+
+
+@cli.command()
+@click.argument('stack_name')
+@click.argument('subscription')
+def keygen(**kwargs):
+    sname = kwargs.get("stack_name", None)
+    if sname is None:
+        raise ValueError("Stack name must be provided.")
+    if kwargs.get("subscription", None) is None:
+        raise ValueError("Subscription must be provided.")
+    dir(context.aws.cloudformation)
+    stack = context.aws.cloudformation.describe_stacks(StackName=sname)
+    scount = len(stack['Stacks'])
+    if scount != 1:
+        if scount == 0:
+            raise ValueError('No matching stacks found.')
+        else:
+            raise ValueError('Stack name ambiguous, matched {0} stacks.'.format(scount))
+    auth = {
+        "AuthAccessKey": None,
+        "AuthServiceKey": None,
+        "AuthServiceUrl": None,
+    }
+    for p in stack['Stacks'][0]['Parameters']:
+        if p['ParameterKey'] in auth:
+            auth[p['ParameterKey']] = p['ParameterValue']
+    payload = generate_policies(kwargs.get("subscription"))
+    sig = customer_auth_sign(auth["AuthServiceUrl"], auth["AuthServiceKey"], payload)
+    r = requests.post("{0}/customer_key".format(auth["AuthServiceUrl"]), data=payload, headers={
+        "Authorization": "CustomerAuthTest {0}:{1}".format(auth["AuthAccessKey"], sig),
+        "X-Acquia-Timestamp": int(time.time()),
+        "Content-Type": "application/json",
+    })
+    print(r.json())
 
 
 @cli.command()
