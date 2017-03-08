@@ -14,8 +14,11 @@ import base64
 import sys
 import time
 
-context = Context()
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+context = Context()
 
 def leaf(fname):
     head, tail = ntpath.split(fname)
@@ -39,18 +42,58 @@ def cli(**kwargs):
     context.merge(kwargs, exclude=["verbose"])
     context.verbose = kwargs["verbose"]
     context.aws = AWS(context.config("aws-access-key", None), context.config("aws-secret-key", None), context.config("aws-region", "us-east-1"), resources=['s3'], clients=['cloudformation'])
+    context.click = click
 
 
 @cli.command()
 @click.argument('stack_name')
 @click.argument('subscription')
-def keygen(**kwargs):
+@click.option('--client-id', type=str, envvar='PLEXUS_CLIENT_ID', help='Sets the client ID of the flood create requests. Must be a valid client ID.')
+def flood(**kwargs):
     sname = kwargs.get("stack_name", None)
     if sname is None:
         raise ValueError("Stack name must be provided.")
     if kwargs.get("subscription", None) is None:
         raise ValueError("Subscription must be provided.")
     dir(context.aws.cloudformation)
+    stack = context.aws.cloudformation.describe_stack_resources(StackName=sname)
+    q = None
+    for resource in stack['StackResources']:
+        if resource['LogicalResourceId'] == 'QueueApp':
+            q = resource['PhysicalResourceId']
+    if q is None:
+        raise ValueError('No matching stacks or queue found.')
+    #scount = len(stack['Stacks'])
+    #if scount != 1:
+    #    if scount == 0:
+    #        raise ValueError('No matching stacks found.')
+    #    else:
+    #        raise ValueError('Stack name ambiguous, matched {0} stacks.'.format(scount))
+
+
+@cli.command()
+@click.argument('stack_name')
+@click.argument('subscription')
+@click.option('--ca-access-key', type=str, envvar='CUSTOMER_AUTH_ACCESS_KEY', help='Overrides the stack access key. Must be provided if ca-secret-key is provided.')
+@click.option('--ca-secret-key',  type=str, envvar='CUSTOMER_AUTH_SECRET_KEY', help='Overrides the stack secret key. Must be provided if ca-access-key is provided.')
+def keygen(**kwargs):
+    cak = kwargs.get("ca_access_key")
+    cas = kwargs.get("ca_secret_key")
+    auth = {
+        "AuthAccessKey": None,
+        "AuthServiceKey": None,
+        "AuthServiceUrl": None,
+    }
+    if cak is not None or cas is not None:
+        if cak is None or cas is None:
+            raise ArgumentError('ca-access-key and ca-secret-key must be both provided or neither should be provided.')
+        auth["AuthAccessKey"] = cak
+        auth["AuthServiceKey"] = cas
+    sname = kwargs.get("stack_name", None)
+    if sname is None:
+        raise ValueError("Stack name must be provided.")
+    if kwargs.get("subscription", None) is None:
+        raise ValueError("Subscription must be provided.")
     stack = context.aws.cloudformation.describe_stacks(StackName=sname)
     scount = len(stack['Stacks'])
     if scount != 1:
@@ -58,21 +101,18 @@ def keygen(**kwargs):
             raise ValueError('No matching stacks found.')
         else:
             raise ValueError('Stack name ambiguous, matched {0} stacks.'.format(scount))
-    auth = {
-        "AuthAccessKey": None,
-        "AuthServiceKey": None,
-        "AuthServiceUrl": None,
-    }
     for p in stack['Stacks'][0]['Parameters']:
-        if p['ParameterKey'] in auth:
+        if p['ParameterKey'] in auth and auth[p['ParameterKey']] is None:
             auth[p['ParameterKey']] = p['ParameterValue']
     payload = generate_policies(kwargs.get("subscription"))
-    sig = customer_auth_sign(auth["AuthServiceUrl"], auth["AuthServiceKey"], payload)
+    sig = customer_auth_sign(auth["AuthServiceUrl"], auth["AuthServiceKey"], payload, context)
+    if context.verbose:
+        context.click.echo('*SIGNATURE: {0}'.format(sig), file=sys.stderr)
     r = requests.post("{0}/customer_key".format(auth["AuthServiceUrl"]), data=payload, headers={
         "Authorization": "CustomerAuthTest {0}:{1}".format(auth["AuthAccessKey"], sig),
         "X-Acquia-Timestamp": int(time.time()),
         "Content-Type": "application/json",
-    })
+    }, verify=False)
     print(r.json())
 
 
@@ -84,7 +124,7 @@ def keygen(**kwargs):
 @click.option("--data-file", type=str, help='Provides the request body from the contents of the file at this path. Mutually exclusive with other body options. Automatically converts request method to POST if no method is provided.')
 @click.option("--data-resource", type=str, help='Provides a resource, which is uploaded to an S3 bucket. The request body is automatically generated for the URL of the file. Mutually exclusive with other body options. Automatically converts request method to POST if no method is provided.')
 @click.option("-X", "--request", type=str, help='Sets the request method. Defaults to GET if no data is provided, or POST if data is provided.')
-@click.option("--client-id", type=str, help='Sets the value of the X-Acquia-Plexus-Client-Id header. Required for most endpoints.')
+@click.option("--client-id", type=str, envvar='PLEXUS_CLIENT_ID', help='Sets the value of the X-Acquia-Plexus-Client-Id header. Required for most endpoints.')
 def curl(**kwargs):
     context.merge(kwargs, include=['plexus-access-key', 'plexus-secret-key'])
 
@@ -121,10 +161,11 @@ def curl(**kwargs):
                 request.with_json_body(f.read())
         elif kwargs.get("data_resource") is not None:
             fname = kwargs.get("data_resource")
-            tarname = leaf(fname)
-            context.aws.s3.Bucket(context.config("aws-s3-bucket-name")).upload_file(fname, tarname, ExtraArgs={'ACL': 'public-read'})
+            with open(fname) as f:
+                jd = f.read()
+            jdict = json.dumps(jd)
             request.with_json_body({
-                'resource': 'http://s3.amazonaws.com/%s/%s' % (context.config("aws-s3-bucket-name"), tarname)
+                'data': jdict
             })
 
     if kwargs.get("client_id") is not None:
