@@ -20,6 +20,7 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 context = Context()
 
+
 def leaf(fname):
     head, tail = ntpath.split(fname)
     return tail or ntpath.basename(head)
@@ -63,12 +64,12 @@ def flood(**kwargs):
             q = resource['PhysicalResourceId']
     if q is None:
         raise ValueError('No matching stacks or queue found.')
-    #scount = len(stack['Stacks'])
-    #if scount != 1:
-    #    if scount == 0:
-    #        raise ValueError('No matching stacks found.')
-    #    else:
-    #        raise ValueError('Stack name ambiguous, matched {0} stacks.'.format(scount))
+#   scount = len(stack['Stacks'])
+#   if scount != 1:
+#       if scount == 0:
+#           raise ValueError('No matching stacks found.')
+#       else:
+#           raise ValueError('Stack name ambiguous, matched {0} stacks.'.format(scount))
 
 
 @cli.command()
@@ -163,7 +164,7 @@ def curl(**kwargs):
             fname = kwargs.get("data_resource")
             with open(fname) as f:
                 jd = f.read()
-            jdict = json.dumps(jd)
+            jdict = json.loads(jd)
             request.with_json_body({
                 'data': jdict
             })
