@@ -4,7 +4,7 @@ description = 'Python based command line interface tool for plexus.'
 
 setup(
     name='pyplexus',
-    version='1.0.2rc1',
+    version='1.0.2',
     description=description,
     long_description=description,
     url='https://github.com/baliame/pyplexus',
@@ -12,7 +12,7 @@ setup(
     author_email='akos.toth@cheppers.com',
     license='MIT',
     classifiers=[
-        'Development Status :: 2 - Pre-Alpha',
+        'Development Status :: 5 - Production/Stable',
         'Environment :: Console',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: MIT License',
