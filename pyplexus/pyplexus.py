@@ -126,6 +126,7 @@ def keygen(**kwargs):
 @click.option("--data-resource", type=str, help='Provides a resource, which is uploaded to an S3 bucket. The request body is automatically generated for the URL of the file. Mutually exclusive with other body options. Automatically converts request method to POST if no method is provided.')
 @click.option("-X", "--request", type=str, help='Sets the request method. Defaults to GET if no data is provided, or POST if data is provided.')
 @click.option("--client-id", type=str, envvar='PLEXUS_CLIENT_ID', help='Sets the value of the X-Acquia-Plexus-Client-Id header. Required for most endpoints.')
+@click.option("--pretty", is_flag=True, help='If set, pretty print json responses.')
 def curl(**kwargs):
     context.merge(kwargs, include=['plexus-access-key', 'plexus-secret-key'])
 
@@ -205,4 +206,7 @@ def curl(**kwargs):
         click.echo("*Request headers: %s" % (request.header), file=sys.stderr)
 
     resp = request.do()
-    print(resp.json())
+    indent=None
+    if kwargs.get("pretty"):
+        indent="  "
+    print(json.dumps(resp.json(), indent=indent))

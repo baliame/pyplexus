@@ -4,7 +4,7 @@ description = 'Python based command line interface tool for plexus.'
 
 setup(
     name='pyplexus',
-    version='1.0.2',
+    version='1.0.3',
     description=description,
     long_description=description,
     url='https://github.com/baliame/pyplexus',
